@@ -98,9 +98,62 @@
 	sC=screen.setColor
 ---@endsection
 
+---@section profilerTime
+function profilerTime(name)
+	return {
+	t=os.clock(),
+	name=name,
+	start=function(self)
+		self.t=os.clock()
+	end,
+	stop=function (self)
+		print((self.name or '')..string.format('%.0f',1000*(os.clock()-self.t))..'ms')
+		self.t=os.clock()
+	end
+	}
+end
+---@endsection
+
+---@section profileFunction
+function profileFunction(func,...)
+	local time,outputs=os.clock()
+	outputs={func(tu({...}))}
+	print(string.format('%.0f',1000*(os.clock()-time))..'ms')
+	return tu(outputs)
+end
+---@endsection
+
 ---@section Vector3 1 VECTOR3DCLASS
 Vector3=--3D
 {
+---@section New
+	New=function(x,y,z)return {x,y,z,
+		Add=function (self,B)
+			for i=1,3 do
+				self[i]=self[i]+B[i]
+			end
+		end,
+		Sub=function (self,B)
+			for i=1,3 do
+				self[i]=self[i]-B[i]
+			end
+		end,
+		Dot=function(self,B)
+			return self[1]*B[1]+self[2]*B[2]+self[3]*B[3] 
+		end,
+		Scale=function(self,B)
+			for i=1,3 do
+				self[i]=self[i]*B
+			end
+		end,
+		Magnitude=function(self,B)
+			for i=1,3 do
+				self[i]=self[i]*B
+			end
+		end,
+	} end,
+---@endsection
+
 ---@section Add
 	Add=function(A,B)return {A[1]+B[1],A[2]+B[2],A[3]+B[3]} end,
 ---@endsection
@@ -314,6 +367,7 @@ fourier={
 	---@endsection
 
 	---@section rescaleDown
+	---@return void
     rescaleDown=function(input)
         --used to rescale outputs of fourier transform down by N, as that's what fourier does
         local scale=1/(#input+1)
@@ -327,11 +381,13 @@ fourier={
 	---@section getAmplitudes
     getAmplitudes=function(fhat)
         --formula for frequency is k/(N*dT), can be done in a loop after using this function to to get amplitudes of frequqncies
-        local amp={}
+        local amp,peak,math={},0
         for i=0,#fhat do
-            amp[i]=(fhat[i].real^2+fhat[i].imag^2)^0.5
+			math=(fhat[i].real^2+fhat[i].imag^2)^0.5
+			peak=max(peak,math)
+            amp[i]=math
         end
-        return amp
+        return amp,peak
     end,
 	---@endsection
 
@@ -399,110 +455,225 @@ fourier={
 	---@endsection
 
 	---@section fftFast
-    fftFast=function(input,inverse)
-        --matrix FFT implementation optimized as all hell for speed
-        --can take either 1-indexed tables {1,2,3,4} or 0-indexed complex values {{real=1,imag=0},{real=2,imag=0},{real=3,imag=0},{real=4,imag=0}}
-        --it has no protection from N-size other than a power of 2 when being fed with complex values, as that seemed excessive
-        --will only output 0-indexed complex values, even if they represent just the real values
-        local Mult=function (A,B)
-            --real fuckin black magic at this point
-            local c,half,index1,index2,rA1,rA2,iA1,iA2,rB1,rB2,iB1,iB2,r,im={},(#B+1)/2
-            for i=0,#B do
-                index1=i%half
-                index2=index1+half
-                rA1=A[i][1].real
-                iA1=A[i][1].imag
-                rA2=A[i][2].real
-                iA2=A[i][2].imag
-                rB1=B[index1].real
-                iB1=B[index1].imag
-                rB2=B[index2].real
-                iB2=B[index2].imag
-                r=rB1*rA1+rB2*rA2-iB1*iA1-iB2*iA2
-                im=iB1*rA1+iB2*rA2+rB1*iA1+rB2*iA2
-                c[i]={real=r,imag=im}
-            end
-            return c
-        end
-        local genPermutationOrder=function(N)
-            --generates a table of re-ordered 1-indexes, bit reversal
-            local bits,V,val=math.log(N,2),{}
-            for i=0,N-1 do
-                val=1
-                for j=1,bits do
-                    val=val+(i&2^(j-1)==2^(j-1) and 2^(bits-j) or 0)
-                end
-                V[i]=val
-            end
-            return V
-        end
-        local genWeird=function(N,inverse)
-            --also close to black magic, generates {I,D,I,-D} simplified matrix
-            local weird,n={},N/2
-            for i=0,n-1 do
-                weird[i]={{real=1,imag=0},fourier.getComplexOmega((i)*(inverse and -1 or 1),N)}
-                weird[i+n]={{real=1,imag=0},fourier.getComplexOmega((n+i)*(inverse and -1 or 1),N)}
-            end
-            return weird
-        end
+	fftFast=function(input,inverse,initializeToN)
+		--1014 chars, 1678/290 ms initialization/later runs at N=2^15 on my PC
+		--matrix FFT implementation optimized as all fuck. I legit no longer have a clue of what's going on. I'm only optimizing further
+		--optimized to not produce any garbage, thus avoiding garbage collector lag hugely increasing performance
+		--can take either 1-indexed tables {1,2,3,4} or 0-indexed complex values {{real=1,imag=0},{real=2,imag=0},{real=3,imag=0},{real=4,imag=0}}
+		--will 0-pad to nearest largest power of 2 when fed with "normal" table for input
+		--it has no protection from N-size other than a power of 2 when being fed with complex values, as that seemed excessive
+		--will only output 0-indexed complex values, even if they represent just the real values
+		local genPermutationOrder=function(N)
+			--generates a table of re-ordered 1-indexes, bit reversal
+			local bits,V,val=math.log(N,2),{}
+			for i=0,N-1 do
+				val=1
+				for j=1,bits do
+					val=val+(i&2^(j-1)==2^(j-1) and 2^(bits-j) or 0)
+				end
+				V[i]=val
+			end
+			return V
+		end
+		local genWeird=function(N,inverse)
+			--also close to black magic, generates {I,D,I,-D} simplified matrix
+			--edit: not even I D I -D anymore... the optimizations are too far
+			local weird,n={},N/2
+			for i=0,n-1 do
+				weird[i]=fourier.getComplexOmega((i)*(inverse and -1 or 1),N)
+				weird[i+n]=fourier.getComplexOmega((n+i)*(inverse and -1 or 1),N)
+			end
+			return weird
+		end
 
-        --initialize memory, locals and functions
-        if UniqueNameFFTFMemoryKrolon==nil then UniqueNameFFTFMemoryKrolon={} end
-        local N,vector,inverse,mem,V=2^ceil(log(#input,2)),{},inverse or false,UniqueNameFFTFMemoryKrolon
+		--initialize memory, locals and functions
+		if UniqueNameFFTFMemoryKrolon==nil then UniqueNameFFTFMemoryKrolon={} end
+		local N,inverse,mem,vector,V,A,B,C,half,index,A2,B1,B2,rA2,iA2,rB1,rB2,iB1,iB2,r,im=fourier.fftSize(initializeToN or #input),inverse or false,UniqueNameFFTFMemoryKrolon
 
-        --precompute all necessary constants if they're not existing
-        V=N
-        while mem[V]==nil and V>1 do
-            mem[V]={order=genPermutationOrder(V),matrix={}}
-            mem[V].matrix[true]=genWeird(V,true)
-            mem[V].matrix[false]=genWeird(V)
-            V=V/2
-        end
+		--precompute all necessary constants if they're not existing
+		V=N
+		while mem[V]==nil and V>=1 do
+			mem[V]={order=genPermutationOrder(V),matrix={},vector={}}
+			mem[V].matrix[true]=genWeird(V,true)
+			mem[V].matrix[false]=genWeird(V)
+			logn=ceil(log(N,2))
+			--t=os.clock()
+			for i=0,V-1 do
+				mem[V].vector[i]={}
+				for j=0,2^(logn-ceil(log((i+1),2)))-1 do
+					mem[V].vector[i][j]={real=0,imag=0}
+				end
+			end
+			--print(V,string.format('%.0f',1000*(os.clock()-t)))
+			V=V/2
+		end
+		if initializeToN then return end
+		vector=mem[N].vector
 
-        --make sure inputs are correct and reorder them in bit-reversal pattern
-        V=mem[N].order
-        if math.type(input[1]) then
-            for i=0,N-1 do
-                vector[i]={}
-                vector[i][0]={real=input[V[i]] or 0,imag=0}
-            end
-        else
-            for i=0,N-1 do
-                vector[i]={}
-                vector[i][0]=input[V[i]-1]
-            end
-        end
+		--make sure inputs are correct and reorder them in bit-reversal pattern
+		V=mem[N].order
+		if math.type(input[1]) then
+			for i=0,N-1 do
+				vector[i][0].real=input[V[i]] or 0
+				vector[i][0].imag=0
+			end
+		else
+			for i=0,N-1 do
+				vector[i][0].real=input[V[i]-1].real
+				vector[i][0].imag=input[V[i]-1].imag
+			end
+		end
 
-        --main work FFT loop
-        V=1
-        while V<N do
-            V=V*2
-            for i=0,N/V-1 do
-                for j=0,V/2-1 do
-                    vector[i][j]=vector[2*i][j]
-                    vector[i][j+V/2]=vector[2*i+1][j]
-                end
-                vector[i]=Mult(mem[V].matrix[inverse],vector[i])
-            end
-        end
-        return vector[0]
-    end,
+		--main work FFT loop
+		V=1
+		while V<N do
+			V=V*2
+			for i=0,N/V-1 do
+				--A,B,C=mem[V].matrix[inverse],vector[2*i],vector[2*i+1]
+				A,B,C=mem[V].matrix[inverse],vector[2*i],vector[2*i+1]
+				half=(#A+1)/2
+				for j=#A,0,-1 do
+					index=j%half
+					A2=A[j]
+					B1=B[index]
+					B2=C[index]
+					rA2=A2.real
+					iA2=A2.imag
+					rB1=B1.real
+					iB1=B1.imag
+					rB2=B2.real
+					iB2=B2.imag
+					r=rB1+rB2*rA2-iB2*iA2
+					im=iB1+iB2*rA2+rB2*iA2
+					vector[i][j].real=r
+					vector[i][j].imag=im
+				end
+			end
+		end
+		vector={}
+		for i=0,#mem[N].vector[0] do
+			vector[i]={real=mem[N].vector[0][i].real,imag=mem[N].vector[0][i].imag}
+		end
+		return vector
+	end,
 	---@endsection
 
+	fftTest=function(input,inverse,initializeToN)
+		--matrix FFT implementation optimized as all fuck. I legit no longer have a clue of what's going on. I'm only optimizing further
+		--optimized to not produce any garbage, thus avoiding garbage collector lag hugely increasing performance
+		--can take either 1-indexed tables {1,2,3,4} or 0-indexed complex values {{real=1,imag=0},{real=2,imag=0},{real=3,imag=0},{real=4,imag=0}}
+		--will 0-pad to nearest largest power of 2 when fed with "normal" table for input
+		--it has no protection from N-size other than a power of 2 when being fed with complex values, as that seemed excessive
+		--will only output 0-indexed complex values, even if they represent just the real values
+
+		--localize shit for user safety
+		if UniqueNameFFTFMemoryKrolon==nil then UniqueNameFFTFMemoryKrolon={vector={},orders={}} end
+		local N,inverse,mem,vector,V,A,B,C,half,index,A2,B1,B2,rA2,iA2,rB1,rB2,iB1,iB2=fourier.fftSize(initializeToN or #input),inverse or false,UniqueNameFFTFMemoryKrolon
+
+		--precompute all necessary shit into memory
+		V=N
+		while mem[V]==nil and V>=1 do
+			--mem[V]={order=genPermutationOrder(V),matrix={}}
+			mem[V]={matrix={}}
+			--generate Vth roots of unity for forward or inverse
+			for i=-1,1,2 do
+				mem[V].matrix[i<0]={}
+				for j=0,V-1 do
+					mem[V].matrix[i<0][j]=fourier.getComplexOmega(j*i,V)
+				end
+			end
+			V=V/2
+		end
+
+		--preoccupy memory for computations, the holy grail of garbage collector avoidance
+		--plus reorder first because it's better optimized that way, sorry!
+		--not like you care much, it's already convoluted as fuck
+		--my next project will be convolutions and wavelets heh ba doom tss
+		vector=mem.vector
+		if vector[N-1]==nil then
+			--generate a table of re-ordered 1-indexes in bit reversal pattern
+			--A is reused variable, amount of bits, and log base 2 of N for next step
+			A=log(N,2)
+			mem.orders[N]={}
+			for i=0,N-1 do
+				val=1
+				for j=1,A do
+					val=val+(i&2^(j-1)==2^(j-1) and 2^(A-j) or 0)
+				end
+				mem.orders[N][i]=val
+			end
+
+			--that's the holy grail here
+			for i=0,N-1 do
+				vector[i]={}
+				V=A-ceil(log((i+1),2))
+				for j=0,2^V-1 do
+					vector[i][j]={real=0,imag=0}
+				end
+			end
+		end
+		if initializeToN then return end
+
+		--make sure inputs are correct and reorder them in bit-reversal pattern
+		V=mem.orders[N]
+		if math.type(input[1]) then
+			for i=0,N-1 do
+				vector[i][0].real=input[V[i]] or 0
+				vector[i][0].imag=0
+			end
+		else
+			for i=0,N-1 do
+				vector[i][0].real=input[V[i]-1].real
+				vector[i][0].imag=input[V[i]-1].imag
+			end
+		end
+
+		--main work FFT loop
+		V=1
+		while V<N do
+			V=V*2
+			for i=0,N/V-1 do
+				--A,B,C=mem[V].matrix[inverse],vector[2*i],vector[2*i+1]
+				B,C=vector[2*i],vector[2*i+1]
+				A=mem[V].matrix[inverse]
+				half=(#A+1)/2
+				for j=#A,0,-1 do
+					index=j%half
+					A2=A[j]
+					B1=B[index]
+					B2=C[index]
+					rA2=A2.real
+					iA2=A2.imag
+					rB1=B1.real
+					iB1=B1.imag
+					rB2=B2.real
+					iB2=B2.imag
+					vector[i][j].real=rB1+rB2*rA2-iB2*iA2
+					vector[i][j].imag=iB1+iB2*rA2+rB2*iA2
+				end
+			end
+		end
+		vector={}
+		for i=0,N-1 do
+			vector[i]={real=mem.vector[0][i].real,imag=mem.vector[0][i].imag}
+		end
+		return vector
+	end,
 	---@section fftCompact
     fftCompact=function(input,inverse)
+        --791 chars, 1266ms/800-1150 av:920ms initialization/later runs at N=2^15 on my PC
         --fftFast sacrificing performance for a little less char count, takes 50% longer to perform
         --can take either 1-indexed tables {1,2,3,4} or 0-indexed complex values {{real=1,imag=0},{real=2,imag=0},{real=3,imag=0},{real=4,imag=0}}
         --it has no protection from N-size other than a power of 2 when being fed with complex values, as that seemed excessive
         --will only output 0-indexed complex values, even if they represent just the real values
-        local Mult=function (A,B)
+        local Mult=function (A,B,C)
             --it's black magic at this point
-            local c,half,a,b={},(#B+1)/2
-            for i=0,#B do
+            local c,half,a,b={},#B+1
+            for i=0,#A do
                 c[i]={real=0,imag=0}
                 for j=0,1 do
                     a=A[i][j+1]
-                    b=B[i%half+half*j]
+					b=(j==0 and B or C)[i%half]
                     c[i].real=c[i].real+b.real*a.real-b.imag*a.imag
                     c[i].imag=c[i].imag+b.imag*a.real+b.real*a.imag
                 end
@@ -534,7 +705,7 @@ fourier={
 
         --precompute all necessary "matrices" if they're not existing
         V=N
-        while mem[V]==nil and V>1 do
+        while mem[V]==nil and V>=1 do
             mem[V]={matrix={}}
             mem[V].matrix[true]=genWeird(V,true)
             mem[V].matrix[false]=genWeird(V)
@@ -552,11 +723,7 @@ fourier={
         while V<N do
             V=V*2
             for i=0,N/V-1 do
-                for j=0,V/2-1 do
-                    vector[i][j]=vector[2*i][j]
-                    vector[i][j+V/2]=vector[2*i+1][j]
-                end
-                vector[i]=Mult(mem[V].matrix[inverse],vector[i])
+                vector[i]=Mult(mem[V].matrix[inverse],vector[2*i],vector[2*i+1])
             end
         end
         return vector[0]
@@ -848,31 +1015,33 @@ function clamp(minimum,maximum,x) return max(min(maximum,x),minimum) end
 ---@endsection
 
 ---@section av
-
 ---EWMA, lowkey rolling average
 function av(old,new,smt) return ((smt-1)*old+new)/smt end
 ---@endsection
----@section av2
 
+---@section av2
 ---EWMA, loewkey rolling average, but stays constant and new is a change
 function av2(old,new,smt) return (smt*old+new)/smt end
 ---@endsection
 
 ---@section createRollingAverage
-function createRollingAverage(new,smoothing)
+function createRollingAverage(smoothing)
 	return {
 		smoothing=smoothing,
-		memory={0},
+		memory={},
 		addTo=function(self, value)
-			ti(self.memory)
-			if #self.memory>self.smoothing then tr(self.memory,1) end
+			ti(self.memory,value)
+			while #self.memory>self.smoothing do
+				tr(self.memory,1)
+			end
 		end,
 		getAverage=function(self)
-			local av=0
+			local av,count=0,0
 			for i,v in ipairs(self.memory) do
 				av=av+v
+				count=count+1
 			end
-			return av/self.smoothing
+			return av/count
 		end
 	}
 end
@@ -1034,11 +1203,12 @@ function fitPoly(order,data,speed,memorytable)
 		end
 		return err
 	end
-	if #mem~=6 or #mem[4]~=order+1 then 
-		for i=1,6 do
+	if #mem~=6 or #mem[4]~=order+1 then
+		--[[for i=1,6 do
 			mem[i]=1
 		end
-		mem[4]={}
+		mem[4]={}]]
+		mem={0,1,math.huge,{},0,0}
 		for i=1,order+1 do
 			mem[4][i]=0
 		end
@@ -1078,29 +1248,27 @@ end
 ---@section fitPolyCustom
 
 ---very resource expensive, the more data you have the worse it is, but it does a decent fit, progressively gets better, parabolas are order 2, data table {{x,y},{x,y}} that you want to fit, speed how many paths it checks per call, provide with memory table, returns table of a polynomial {a0,a1,a2}
-function fitPolyCustom(order,data,errorFunction,speed,memorytable)
+function fitPolyCustom(amtOfCoefs,data,errorFunction,speed,memorytable)
 	--[[
 	data is {{x,y},{x,y},{x,y}}
 	errorFunction(coefficients,data)
 	is same as fitPoly but takes in a custom error function
 	one more butt: order is amount of coefficienst, not the order of polynomial because well it no longer is set to polynomial
 	]]
-	local a,b,mem,c,m,step,err1,err2,k={},{},memorytable
-	if #mem~=6 or #mem[4]~=order then
+	local a,mem,c,m,step,err1,err2,k,b={},memorytable
+	if #mem~=6 or #mem[4]~=amtOfCoefs then
 		for i=1,6 do
 			mem[i]=1
 		end
 		mem[4]={}
-		for i=1,order do
+		for i=1,amtOfCoefs do
 			mem[4][i]=0
 		end
 	end
-	step=mem[2]
-	b=mem[4]
-	err1=errorFunction(b,data)
-	k=mem[5]
-	m=mem[6]
-	c=3^order
+	--step,err1,b,k,m=mem[2],mem[3],mem[4],mem[5],mem[6]
+	step,err1,b,k,m=mem[2],errorFunction(mem[4],data),mem[4],mem[5],mem[6]
+	--err1=errorFunction(b,data)
+	c=3^amtOfCoefs
 	for i=1,speed do
 		m=m+1
 		if m>c then step,m=step*math.random(),1 end
@@ -1120,10 +1288,7 @@ function fitPolyCustom(order,data,errorFunction,speed,memorytable)
 			m=0
 		end
 	end
-	mem[2]=step>0 and step or 1
-	mem[3]=err1
-	mem[5]=k
-	mem[6]=m
+	mem[2],mem[3],mem[5],mem[6]=step>0 and step or 1,err1,k,m
 	return b
 end
 ---@endsection
@@ -1257,11 +1422,11 @@ end
 
 ---changes HSV into RGB and corrects it's gamma for the filfthy SW displays, hue 0-359 (360 wraps), s v alpha 0-1, suggested gamma 2.4 k 0.85, return r,g,b,a
 function HSV(h,s,v,alpha) 
-	local al,c,i,d,x,m=alpha or 1,v*s,flr((h%360)/60)+1
+	local alpha,c,i,d,x,m=alpha or 1,v*s,flr((h%360)/60)+1
 	x,m=c*(1-abs((h/60)%2-1)),v-c
 	d={{c,x,0},{x,c,0},{0,c,x},{0,x,c},{x,0,c},{c,0,x}}
 	--return (d[i][1]+m)^a*255,(d[i][2]+m)^a*255,(d[i][3]+m)^a*255
-	return correctRGBA((d[i][1]+m)*255,(d[i][2]+m)*255,(d[i][3]+m)*255,al*255)
+	return correctRGBA((d[i][1]+m)*255,(d[i][2]+m)*255,(d[i][3]+m)*255,alpha*255)
 	--[[
 	suggested gamma and k, especially for monitor use, is 2.4 and 0.85, but I leave it open just in case
 	returns r,g,b as "free" values, not in a table, also doesn't force screen.setColor, just returns so you can use r,g,b=HSV()
