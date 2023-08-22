@@ -1,12 +1,12 @@
 
 ---@diagnostic disable:unbalanced-assignments
 
-Krolony={}
+Krolony={Math={}}
 
 require("KrolonyUtilities")
 require("KrolonyFourier")
 require("KrolonyGeometry")
---require("KrolonyMatrixes")
+require("KrolonyMatrices")
 require("KrolonyProfilers")
 require("KrolonyScreens")
 require("KrolonySpecialized")

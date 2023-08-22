@@ -1,6 +1,6 @@
 ---@section Profilers 1 PROFILERCLASS
 Krolony.Profilers={
----@section profilerTime
+---@section profileTime
 ---not to be used in a game, will error out
 ---@param name string this will be printed together with time
 ---@param printt boolean, whether to print the output or not
