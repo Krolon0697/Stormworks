@@ -145,16 +145,16 @@ Krolony.Math.Matrix=
 	---@return number z
 	---@return number w
 	multVecM=function(mat,vec)
-		local t,c,s,v={},{vec.x,vec.y,vec.z or 0, vec.w or 0},#mat[1]
+		local c,s,v={vec.x,vec.y,vec.z or 1, vec.w or 1},#mat[1]
 		for i=1,#mat do
 			--v=mat[i][1]*vec.x+mat[i][2]*vec.y+(vec.z and mat[i][3]*vec.z or 0)+(vec.w and mat[i][4]*vec.w or 0)
 			v=0
 			for j=1,s do
 				v=v+mat[i][j]*c[j]
 			end
-			t[i]=v
+			c[i+4]=v
 		end
-		return t[1],t[2],t[3],t[4]
+		return c[5],c[6],c[7],c[8]
 	end,
 	---@endsection
 

@@ -146,7 +146,7 @@ Krolony.Math.Vec3=--3D
 	---@param w number initial position, defaults to nil, useful for weird 4D shit in 3D
 	---@return table object with methods
 	newV3=function(x,y,z,w)
-		local t={x=x or 0,y=y or 0,z=z or 0,w=w,vectorToMatrix=Krolony.Math.Matrix.vectorToMatrix}
+		local t={x=x or 0,y=y or 0,z=z or 0,w=w or 0,vectorToMatrix=Krolony.Math.Matrix.vectorToMatrix}
 		for i,v in pairs(Krolony.Math.Vec3) do
 			t[i]=v
 		end
@@ -162,9 +162,9 @@ Krolony.Math.Vec3=--3D
 	---@param z number defaults to 0
 	---@param w any defaults to nil
 	setV3=function(A,x,y,z,w)
-		A.x=x or 0
-		A.y=y or 0
-		A.z=z or 0
+		A.x=x
+		A.y=y
+		A.z=z
 		A.w=w
 	end,
 	---@endsection
@@ -175,7 +175,7 @@ Krolony.Math.Vec3=--3D
 	---@param B table vector
 	---@return number dot
 	dotV3=function(A,B)
-		return A.x*B.x+A.y*B.y+A.z*B.z+(A.w or 0)*(B.w or 0)
+		return A.x*B.x+A.y*B.y+A.z*B.z+A.w*B.w
 	end,
 	---@endsection
 
@@ -183,7 +183,7 @@ Krolony.Math.Vec3=--3D
 	---@param A table
 	---@return number magnitude
 	magnitudeV3=function(A)
-		return (A.x*A.x+A.y*A.y+A.z*A.z+(A.w or 0)^2)^0.5
+		return (A.x*A.x+A.y*A.y+A.z*A.z+A.w*A.w)^0.5
 	end,
 	---@endsection
 
@@ -193,7 +193,7 @@ Krolony.Math.Vec3=--3D
 	---@param B table vectors
 	---@return number angle in radians
 	angleV3=function(A,B)
-		return math.acos(Krolony.Utilities.clamp(-1,1,A:dotV3(B)/(A:MagnitudeV3()*B:MagnitudeV3())))
+		return math.acos(Krolony.Utilities.clamp(-1,1,A:dotV3(B)/(A:magnitudeV3()*B:magnitudeV3())))
 	end,
 	---@endsection
 
@@ -201,8 +201,10 @@ Krolony.Math.Vec3=--3D
 	---@param A table
 	---@param B table vector
 	---@return table object with methods
-	addV3=function(A,B)
-		return Krolony.Math.Vec3.NewV3(A.x+B.x,A.y+B.y,A.z+B.z,(A.w or B.w) and ((A.w or 0)+(B.w or 0)) or nil)
+	addV3=function(A,B,out)
+		out=out or Krolony.Math.Vec3.newV3()
+		out:setV3(A.x+B.x,A.y+B.y,A.z+B.z,A.w+B.w)
+		return out
 	end,
 	---@endsection
 
@@ -210,8 +212,10 @@ Krolony.Math.Vec3=--3D
 	---@param A table
 	---@param B table vector
 	---@return table object with methods
-	subV3=function(A,B)
-		return Krolony.Math.Vec3.NewV3(A.x-B.x,A.y-B.y,A.z-B.z,(A.w or B.w) and ((A.w or 0)-(B.w or 0)) or nil)
+	subV3=function(A,B,out)
+		out=out or Krolony.Math.Vec3.newV3()
+		out:setV3(A.x-B.x,A.y-B.y,A.z-B.z,A.w-B.w)
+		return out
 	end,
 	---@endsection
 
@@ -219,8 +223,10 @@ Krolony.Math.Vec3=--3D
 	---@param A table
 	---@param ScaleBy number
 	---@return table object with methods
-	scaleV3=function(A,ScaleBy)
-		return Krolony.Math.Vec3.NewV3(A.x*ScaleBy,A.y*ScaleBy,A.z*ScaleBy,A.w and A.w*ScaleBy or nil)
+	scaleV3=function(A,ScaleBy,out)
+		out=out or Krolony.Math.Vec3.newV3()
+		out:setV3(A.x*ScaleBy,A.y*ScaleBy,A.z*ScaleBy,A.w*ScaleBy)
+		return out
 	end,
 	---@endsection
 
@@ -228,8 +234,9 @@ Krolony.Math.Vec3=--3D
 	---unit vector (magnitude of 1) in the same direction as A
 	---@param A table
 	---@return table object with methods
-	unitV3=function(A)
-		return A:scaleV3(1/A:MagnitudeV3())
+	unitV3=function(A,out)
+		out=out or Krolony.Math.Vec3.NewV3()
+		return A:scaleV3(1/A:magnitudeV3(),out)
 	end,
 	---@endsection
 
@@ -238,8 +245,10 @@ Krolony.Math.Vec3=--3D
 	---@param A table vector
 	---@param B table vector
 	---@return table object with methods
-	crossV3=function(A,B)
-		return Krolony.Math.Vec3.NewV3(A.y*B.z-A.z*B.y,A.z*B.x-A.x*B.z,A.x*B.y-A.y*B.x,nil)
+	crossV3=function(A,B,out)
+		out=out or Krolony.Math.Vec3.newV3()
+		out:setV3(A.y*B.z-A.z*B.y,A.z*B.x-A.x*B.z,A.x*B.y-A.y*B.x,0)
+		return out
 	end,
 	---@endsection
 
@@ -248,8 +257,8 @@ Krolony.Math.Vec3=--3D
 	---@param A table vector
 	---@param B table vector
 	---@return table object with methods
-	projectV3=function(A,B)
-		return B:ScaleV3(A:DotV3(B)/B:DotV3(B))
+	projectV3=function(A,B,out)
+		return B:scaleV3(A:dotV3(B)/B:dotV3(B),out)
 	end,
 	---@endsection
 
@@ -258,8 +267,8 @@ Krolony.Math.Vec3=--3D
 	---@param A table vector
 	---@param B table vector
 	---@return table object with methods
-	rejectV3=function(A,B)
-		return A:SubV3(Krolony.Math.Vec3.ProjectV3(A,B))
+	rejectV3=function(A,B,out)
+		return A:subV3(Krolony.Math.Vec3.projectV3(A,B,out),out)
 	end
 	---@endsection
 }

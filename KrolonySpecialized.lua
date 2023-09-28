@@ -308,6 +308,322 @@ Krolony.Specialized={
 		]]
 	end,
 	---@endsection
+
+	---@section createRender
+	createRender=function(near_plane,far_plane,cam_fov)
+		local vecNew,shadeA,shadeB,shadeC=Krolony.Math.Vec3.newV3
+		shadeA,shadeB,shadeC=vecNew(),vecNew(),vecNew()
+		return {
+			points={},
+			points_g={},
+			triangles={},
+			near_plane=near_plane,
+			far_plane=far_plane,
+			cam_fov=cam_fov,
+			aspect=1,
+
+			shader=function(triangle,vec,points)
+				local mid,v0,v1,v2,N=triangle.mid,points[triangle[1]],points[triangle[2]],points[triangle[3]],triangle.normal
+
+				mid:subV3(vec,shadeC)
+				v1:subV3(v0,shadeA)
+				v2:subV3(v0,shadeB)
+				return vec.strength*shadeC:dotV3(N)/shadeC:magnitudeV3()^3
+			end,
+
+			updateScene=function(self,objects,points_new,triangles,cam_x,cam_y,cam_z,cam_yaw,cam_pitch,cam_roll,backface_culling,lights)
+				test2=Krolony.Profilers.profileTime('matrix: ',true)
+				local c,s,fov,matrix,temporary,triangle_new,triangle,flag,points_g,points,point=math.cos,math.sin,math.tan(self.cam_fov/2*math.atan(self.aspect))
+				local cb,sb,ca,sa,cg,sg=c(-cam_pitch),s(-cam_pitch),c(-cam_yaw),s(-cam_yaw),c(-cam_roll),s(-cam_roll)
+				matrix=Krolony.Math.Matrix.newM(
+					{ca,0,sa,0},--yaw b
+					{0,1,0,0},
+					{-sa,0,ca,0},
+					{0,0,0,1}
+				)
+				temporary=Krolony.Math.Matrix.newM(
+					{1,0,0,0},--pitch y
+					{0,cb,-sb,0},
+					{0,sb,cb,0},
+					{0,0,0,1}
+				)
+				--matrix=matrix:multiplyM(temporary)
+				matrix=temporary:multiplyM(matrix)
+				temporary=Krolony.Math.Matrix.newM(
+					{cg,-sg,0,0},--roll a
+					{sg,cg,0,0},
+					{0,0,1,0},
+					{0,0,0,1}
+				)
+				matrix=temporary:multiplyM(matrix) -- Roll * (Pitch * Yaw) = Roll * Pitch * Yaw
+				--matrix=matrix:multiplyM(temporary)
+				--matrix=matrix:inverseM() --is now rotation matrix
+				
+				temporary=Krolony.Math.Matrix.newM(
+					{1,0,0,-cam_x},
+					{0,1,0,-cam_y},
+					{0,0,1,-cam_z},
+					{0,0,0,1}
+				)
+				matrix=matrix:multiplyM(temporary)
+				temporary=Krolony.Math.Matrix.newM( --perspective matrix
+					{1/fov,0,0,0},
+					{0,self.aspect/fov,0,0},
+					{0,0,self.far_plane/(self.far_plane-self.near_plane),-(self.far_plane*self.near_plane)/(self.far_plane-self.near_plane)},
+					--{0,0,self.far_plane+self.near_plane,-self.far_plane*self.near_plane},
+					{0,0,1,0}
+				)
+				--matrix=matrix:multiplyM(temporary)--combine rotation and perspective
+				matrix=temporary:multiplyM(matrix)
+
+
+
+				local shader,camPos,normal=self.shader,{x=cam_x,y=cam_y,z=cam_z,w=0,strength=1}
+
+				test2:stop()
+				test2=Krolony.Profilers.profileTime('update: ',true)
+				--[[for i=#triangles+1,#self.triangles do
+					self.triangles[i].flag=false
+				end
+				for i=#self.triangles+1,#triangles do
+					self.triangles[i]={mid=vecNew(),normal=vecNew(),dis=0}
+				end
+				for i=1,#points_new do
+					self.points[i]=self.points[i] or vecNew()
+					self.points_g[i]=self.points_g[i] or vecNew()
+					points=self.points[i]
+					points_g=self.points_g[i]--a reuse, would be point_g but that's extra chars so
+					
+					points_g:setV3(points_new[i].x,points_new[i].y,points_new[i].z,1)
+					points:setV3(matrix:multVecM(points_g))
+					points.x=points.x/points.w
+					points.y=points.y/points.w
+				end]]
+				self.totalFlags=0
+				points=self.points
+				points_g=self.points_g
+				local pIndex,tIndex,temporary2,temporary=0,0,0,0
+				for i,object in pairs(objects) do
+					temporary2=temporary2+#object.points
+					temporary=temporary+#object.triangles
+				end
+				for i=#self.points,temporary2 do
+					self.points_g[i]=vecNew()
+					self.points[i]=vecNew()
+				end
+				for i=#self.triangles,temporary do
+					self.triangles[i]={mid=vecNew(),normal=vecNew(),dis=0}
+				end
+				for i,object in pairs(objects) do
+					ca,cb,cg,sa,sb,sg=object.yaw,object.pitch,object.roll,object.x,object.y,object.z
+					temporary=Krolony.Math.Matrix.newM(
+						{1,0,0,sa},
+						{0,1,0,sb},
+						{0,0,1,sg},
+						{0,0,0,1}
+					)
+					cb,sb,ca,sa,cg,sg=c(cb),s(cb),c(ca),s(ca),c(cg),s(cg)
+					temporary2=Krolony.Math.Matrix.newM(
+						{ca,0,sa,0},
+						{0,1,0,0},
+						{-sa,0,ca,0},
+						{0,0,0,1}
+					)
+					temporary=temporary2:multiplyM(temporary)
+					temporary2=Krolony.Math.Matrix.newM(
+						{1,0,0,0},
+						{0,cb,-sb,0},
+						{0,sb,cb,0},
+						{0,0,0,1}
+					)
+					temporary=temporary:multiplyM(temporary2)
+					temporary2=Krolony.Math.Matrix.newM(
+						{cg,-sg,0,0},
+						{sg,cg,0,0},
+						{0,0,1,0},
+						{0,0,0,1}
+					)
+					temporary=temporary2:multiplyM(temporary)
+					--temporary2=matrix:multiplyM(temporary)
+
+					for j,newTriangle in ipairs(object.triangles) do
+						tIndex=tIndex+1
+						triangle=self.triangles[tIndex]
+						triangle[1],triangle[2],triangle[3]=newTriangle[1]+pIndex,newTriangle[2]+pIndex,newTriangle[3]+pIndex
+						triangle.r,triangle.b,triangle.g=newTriangle.r,newTriangle.b,newTriangle.g
+					end
+					for j,newPoint in ipairs(object.points) do
+						pIndex=pIndex+1
+						--points_g[pIndex]:setV3(newPoint.x,newPoint.y,newPoint.z,1)
+						point=points_g[pIndex]--global
+						vertice=points[pIndex]--screen
+						point:setV3(temporary:multVecM(newPoint))
+						vertice:setV3(matrix:multVecM(point))
+						--point.x,point.y,point.z,point.w=temporary:multVecM(newPoint)
+						--vertice.x,vertice.y,vertice.z,vertice.w=matrix:multVecM(point)
+						vertice.x=vertice.x/vertice.w
+						vertice.y=vertice.y/vertice.w
+					end
+				end
+				for i=tIndex+1,#self.triangles do
+					self.triangles[i].flag=false
+				end
+				test2:stop()
+
+				normal=function(triangle)
+					local v0,v1,v2,N=points_g[triangle[1]],points_g[triangle[2]],points_g[triangle[3]],triangle.normal
+					local x1,y1,z1,x2,y2,z2=v1.x-v0.x,v1.y-v0.y,v1.z-v0.z,v2.x-v0.x,v2.y-v0.y,v2.z-v0.z --in relation to 1st vertex
+					x1,y1,z1=y1*z2-z1*y2,z1*x2-x1*z2,x1*y2-y1*x2 --cross product
+					x2=1/(x1*x1+y1*y1+z1*z1)^0.5 --normalization
+					N:setV3(x1*x2,y1*x2,z1*x2,0) --skips many calls
+				end
+				test2=Krolony.Profilers.profileTime('triangles: ',true)
+				for i=1,tIndex do--#triangles do
+					triangle_new=triangles[i]
+					triangle=self.triangles[i]
+					flag=0
+					local x,y,z,vertice=0,0,0
+					for j=1,3 do
+						vertice=triangle[j]--triangle_new[j]
+						--triangle[j]=vertice
+						point=points_g[vertice]
+						x=x+point.x
+						y=y+point.y
+						z=z+point.z
+						--/\ /\ /\ midpoint in global space
+						--\/ \/ \/ screenspace within -1 to 1
+						point=points[vertice]
+						flag=flag+(((point.x^2>1) or (point.y^2>1)) and 1 or 0) + (-point.w>self.near_plane and -point.w<self.far_plane and 0 or 9)
+					end
+					flag=flag<3
+					if flag then
+						triangle.mid:setV3(x/3,y/3,z/3,0)
+						normal(triangle)
+						flag=shader(triangle,camPos,points_g)*backface_culling>=0
+						if flag then
+							triangle.mid:subV3(camPos,shadeA)
+							triangle.dis=shadeA:magnitudeV3()
+							--triangle.r=triangle_new.r
+							--triangle.g=triangle_new.g
+							--triangle.b=triangle_new.b
+						end
+					end
+					triangle.flag=flag
+					self.totalFlags=self.totalFlags+(flag and 1 or 0)
+				end
+				test2:stop()
+
+				test2=Krolony.Profilers.profileTime('sort: ',true)
+				table.sort(self.triangles,function(a,b) return a.flag and not (b.flag and not (a.dis>b.dis)) end)
+				test2:stop()
+			end,
+
+			drawTriangles=function(self,x,y,w,h,lights,backface_culling)
+				self.aspect=h/w
+				w=w/2
+				h=h/2
+				x=x+w
+				y=y+h
+				local lasthash,default_light,points_g,points,triangles,color,draw,triangle,p1,p2,p3,hash,r,g,b,hash_agresiveness=-1,#lights==0 and 1 or 0,self.points_g,self.points,self.triangles,screen.setColor,screen.drawTriangleF
+				local RGB,min,max,shader,shade,shadeCR,shadeCG,shadeCB,light=Krolony.Screens.correctRGBA,math.min,math.max,self.shader
+				hash_agresiveness=0.1--0.005--min 0.001
+				for i=1,self.totalFlags do
+					triangle=triangles[i]
+					r,g,b=triangle.r,triangle.g,triangle.b
+					shadeCR,shadeCG,shadeCB=default_light,default_light,default_light
+					for j=1,#lights do
+						light=lights[j]
+						shade=max(0,backface_culling*shader(triangle,light,points_g))
+						shadeCR=shadeCR+shade*light.r
+						shadeCG=shadeCG+shade*light.g
+						shadeCB=shadeCB+shade*light.b
+					end
+					r,g,b=RGB(min(300,r*shadeCR),min(300,g*shadeCG),min(300,b*shadeCB),0)
+					hash=((r/255)^0.5//hash_agresiveness)+(((g/255)^0.5//hash_agresiveness)<<20)+(((b/255)^0.5//hash_agresiveness)<<40)
+					if hash~=lasthash then
+						color(r,g,b)
+						lasthash=hash
+					end
+
+					p1,p2,p3=points[triangle[1]],points[triangle[2]],points[triangle[3]]
+					draw(p1.x*h+x,p1.y*w+y,p2.x*h+x,p2.y*w+y,p3.x*h+x,p3.y*w+y)
+				end
+			end,
+
+			drawPixels=function(self,x,y,w,h,lights,backface_culling)
+				self.aspect=h/w
+				self.screenSpace=self.screenSpace or {}
+
+				w=w/2
+				h=h/2
+				x=x+w
+				y=y+h
+				local lasthash,points_g,points,triangles,color,draw,lerp,screenSpace,triangle,x1,x2,x3,y1,y2,y3,p1,p2,p3,z1,z2,z3,hash,r,g,b,d,halfd,halfy=-1,self.points_g,self.points,self.triangles,screen.setColor,screen.drawLine,Krolony.Utilities.lerp,self.screenSpace
+				local RGB,min,max,shader,shade,shadeCR,shadeCG,shadeCB,light,inTriangle,orient=Krolony.Screens.correctRGBA,math.min,math.max,self.shader
+				for i=x-w,x+w do
+					screenSpace[i]=screenSpace[i] or {}
+					for j=y-h,y+h do
+						screenSpace[i][j]=99999999999
+					end
+				end
+				
+				orient=function(A,B,C)
+					local v=(B.x-A.x)*(C.y-A.y)-(B.y-A.y)*(C.x-A.x)
+					return v>0 and 1 or -1
+				end
+				inTriangle=function(x,y,triangle,points)
+					local A,B,C=points[triangle[1]],points[triangle[2]],points[triangle[3]]
+					shadeA:setV3(x,y)
+					local v=orient(A,B,shadeA)+orient(B,C,shadeA)+orient(C,A,shadeA)
+					return v^2==9
+				end
+				for i=1,self.totalFlags do
+					triangle=triangles[i]
+
+					p1,p2,p3=points[triangle[1]],points[triangle[2]],points[triangle[3]]
+					x1=p1.x*h+x
+					y1=p1.y*w+y
+					x2=p2.x*h+x
+					y2=p2.y*w+y
+					x3=p3.x*h+x
+					y3=p3.y*w+y
+					z1,z2,z3=p1.w,p2.w,p3.w
+
+					local minx,maxx,miny,maxy=max(min(x1,x2,x3),x-w),min(x+w,max(x1,x2,x3)),max(y-h,min(y1,y2,y3)),min(y+h,max(y1,y2,y3))
+					for sx=minx//1,maxx do
+						for sy=miny//1,maxy do
+							if inTriangle((sx-x)/w,(sy-y)/h,triangle,points) then
+								halfd=lerp(sx,x1,z1,x2,z2)
+								halfy=lerp(sx,x1,y1,x2,y2)
+								d=lerp(sy,halfy,halfd,y3,z3)
+								if screenSpace[sx][sy]>-d then
+									screenSpace[sx][sy]=-d
+									r,g,b=triangle.r,triangle.g,triangle.b
+									shade=#lights==0 and 1 or 0
+									shadeCR,shadeCG,shadeCB=shade,shade,shade
+									for j=1,#lights do
+										light=lights[j]
+										shade=max(0,backface_culling*shader(triangle,light,points_g))
+										shadeCR=shadeCR+shade*light.r
+										shadeCG=shadeCG+shade*light.g
+										shadeCB=shadeCB+shade*light.b
+									end
+									r,g,b=RGB(min(300,r*shadeCR),min(300,g*shadeCG),min(300,b*shadeCB),0)
+									hash=((r/255)^0.5//0.005)+(((g/255)^0.5//0.005)<<10)+(((b/255)^0.5//0.005)<<20)
+									if hash~=lasthash then
+										color(r,g,b)
+										lasthash=hash
+									end
+									draw(sx,sy,sx+1,sy)
+								end
+							end
+						end
+					end
+				end
+			end
+		}
+	end
+	---@endsection
 }
 ---@endsection SPECIALCLASS
 ---@diagnostic enable:unbalanced-assignments

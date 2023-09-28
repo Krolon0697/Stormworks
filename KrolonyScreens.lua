@@ -147,6 +147,91 @@ Krolony.Screens={
 		return 255*(k*r/255)^gamma,255*(k*g/255)^gamma,255*(k*b/255)^gamma,255*(k*a/255)^gamma
 	end,
 	---@endsection
+
+	---@section makeDial
+	makeDial=function(center_x,center_y,width,height,orientation_angle,arc_segments,arc_radians,antiAliasing,r,g,b)
+		return {
+			marks={},
+			arrows={},
+			antiAliasing=antiAliasing,
+			center_x=center_x,
+			center_y=center_y,
+			width=width,
+			height=height,
+			orientation_angle=orientation_angle,
+			arc_radians=arc_radians,
+			arc_segments=arc_segments,
+			r=r,
+			g=g,
+			b=b,
+			insertMark=function(self,inside,outside,amount,r,g,b)
+				table.insert(self.marks,{inside=inside,outside=outside,amount=amount,r=r,g=g,b=b})
+			end,
+			insertArrow=function(self,arrowID,length,width,r,g,b)
+				self.arrows[arrowID]={length=length,width=width,r=r,g=g,b=b,pos=0}
+			end,
+			update=function(self,arrowID,value)
+				self.arrows[arrowID].pos=value
+			end,
+			draw=function(self)
+				local cos,sin,color,line,triangle=math.cos,math.sin,screen.setColor,screen.drawLine,screen.drawTriangleF
+				local cx,cy,rot,w,h,findPos,alpha,aliasing,x,y,xl,yl,thickness,length_correct,helper=self.center_x,self.center_y,self.orientation_angle
+				findPos=function(angle)
+					local cr,sr,ca,sa=cos(rot),sin(rot),cos(angle),sin(angle)
+					return cx+cr*w*sa+sr*h*ca,cy+sr*w*sa-cr*h*ca
+				end
+
+				thickness=(self.width+self.height)/2
+				thickness=math.atan(1,thickness)
+				length_correct=self.width/self.height
+				for alias=antiAliasing,0,-1 do
+					alpha=alias==0 and 1 or 1-math.abs(alias/antiAliasing)
+					alpha=255*alpha^2.4
+					color(self.r,self.g,self.b,alpha)
+					aliasing=alias==0 and 0 or 1.5*(-1)^alias*alias/antiAliasing--secures against 0/0 when no AA
+					w,h=self.width+aliasing,self.height+aliasing
+					xl,yl=findPos(-self.arc_radians/2)
+					for i=1,self.arc_segments do
+						x,y=findPos(i/self.arc_segments*self.arc_radians-self.arc_radians/2)
+						line(x,y,xl,yl)
+						xl,yl=x,y
+					end
+
+					aliasing=alias==0 and 0 or 1.5*alias/antiAliasing --secures against 0/0 when no AA
+					for index,mark in ipairs(self.marks) do
+						color(mark.r,mark.g,mark.b,alpha)
+						for i=0,mark.amount-1 do
+							i=i/(mark.amount-1)*self.arc_radians-self.arc_radians/2+thickness*aliasing*(-1)^alias
+							helper=aliasing^2+mark.inside
+							w=self.width-helper
+							h=self.height-helper
+							x,y=findPos(i)
+							helper=aliasing^2+mark.outside
+							w=self.width+helper
+							h=self.height+helper
+							xl,yl=findPos(i)
+							line(x,y,xl,yl)
+						end
+					end
+					for index,arrow in ipairs(self.arrows) do
+						color(arrow.r,arrow.g,arrow.b,alpha)
+						--w=arrow.length*self.width/self.height+aliasing*2
+						helper=self.arc_radians*(arrow.pos-0.5)
+						h=arrow.length+aliasing*2
+						w=h*length_correct
+						x,y=findPos(helper)
+						w=arrow.width+aliasing*2
+						h=w
+						xl,yl=findPos(helper+1.57)
+						triangle(x,y,xl,yl,2*cx-xl,2*cy-yl)
+						x,y=findPos(helper+3.14)
+						triangle(x,y,xl,yl,2*cx-xl,2*cy-yl)
+					end
+				end
+			end
+		}
+	end
+	---@endsection
 	}
 ---@endsection DRAWCLASS
 ---@diagnostic enable:unbalanced-assignments
