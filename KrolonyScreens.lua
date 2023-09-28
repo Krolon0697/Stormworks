@@ -149,6 +149,19 @@ Krolony.Screens={
 	---@endsection
 
 	---@section makeDial
+	---creates a dial object which can be worked on by using it's methods
+	---@param center_x number
+	---@param center_y number
+	---@param width number the width of the dial face
+	---@param height number the height of the dial face
+	---@param orientation_angle number angle at which dial face is rotated
+	---@param arc_segments number integer of how many segments there are for the dial face
+	---@param arc_radians number angle on how much of a circle (or ellipse) there is, 0-2pi
+	---@param antiAliasing number integer 0 for no aliasing and as high as you want
+	---@param r number
+	---@param g number
+	---@param b number
+	---@return table object
 	makeDial=function(center_x,center_y,width,height,orientation_angle,arc_segments,arc_radians,antiAliasing,r,g,b)
 		return {
 			marks={},
@@ -164,12 +177,32 @@ Krolony.Screens={
 			r=r,
 			g=g,
 			b=b,
+			---adds a group of marks to the dial
+			---@param self table
+			---@param inside number how much inside of the dial face these marks go
+			---@param outside number how much outside of the dial face these marks go
+			---@param amount number integer of how many marks there are
+			---@param r number
+			---@param g number
+			---@param b number
 			insertMark=function(self,inside,outside,amount,r,g,b)
 				table.insert(self.marks,{inside=inside,outside=outside,amount=amount,r=r,g=g,b=b})
 			end,
+			---adds an arrow to the dial
+			---@param self table
+			---@param arrowID number integer starting at 1, uses ipairs() internally so don't leave holes
+			---@param length number how long the arrow tip is
+			---@param width number how wide the base of arrow is
+			---@param r number
+			---@param g number
+			---@param b number
 			insertArrow=function(self,arrowID,length,width,r,g,b)
 				self.arrows[arrowID]={length=length,width=width,r=r,g=g,b=b,pos=0}
 			end,
+			---updates arrow position
+			---@param self table
+			---@param arrowID number integer, id of the arrow
+			---@param value number 0-1 to go from leftmost mark to the rightmost mark
 			update=function(self,arrowID,value)
 				self.arrows[arrowID].pos=value
 			end,
