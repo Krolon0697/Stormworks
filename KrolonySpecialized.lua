@@ -5,7 +5,7 @@ Krolony.Specialized={
 	---@section bitWork 1 BITCLASS
 	bitWork={
 		---@section floatToBits
-		---Converts X into an integer of same bit representation.
+		---Converts X into an integer of same bit representation. With infs nans and subnormals
 		---IEEE754 compliant
 		---@param x number float
 		---@param exponentBits integer amount of exponent bits, 1 bit for sign
@@ -33,7 +33,7 @@ Krolony.Specialized={
 		---@endsection
 
 		---@section bitsToFloat
-		---converts integer back to floating point number
+		---converts integer back to floating point number with infs nans and subnormals
 		---@param exponent integer
 		---@param mantissa integer
 		---@param exponentBits integer
@@ -46,13 +46,12 @@ Krolony.Specialized={
 			check=exponent==0
 			if exponent==2^exponentBits-1 then return (sign*math.max(-mantissa+1,0))/0 end --infinities and nan
 			exponent=exponent-2^(exponentBits-1)+1
-			--if check0 then return 0 end --0 and  no subnormals
 			return sign*2^exponent*((check and 0 or 1)+mantissa/2^mantissaBits)
 		end,
 		---@endsection
 
 		---@section floatToBitsDry
-		---Converts X into an integer of same bit representation.
+		---Converts X into an integer of same bit representation. No infs nans subnormals
 		---not IEEE754 compliant - supports ONLY normal floating point numbers. No infinities, NaNs or subnormals
 		---@param x number float
 		---@param exponentBits integer amount of exponent bits, 1 bit for sign
@@ -64,7 +63,7 @@ Krolony.Specialized={
 			local sign,mantissa,exponent,precision,check
 			sign=x<0 and 2^exponentBits or 0
 			mantissa=math.abs(x)
-			if mantissa<=2^(-2^(exponentBits-1)+1) then return 0,0 end --0 and no subnormals
+			if mantissa<=2^(-2^(exponentBits-1)+1) then return 0,0 end
 			precision=math.log(mantissa,2)//1
 			check=mantissa/2^precision
 			precision=precision+(check<1 and -1 or check>=2 and 1 or 0) --correct for inaccurate log :rolling_eyes:
@@ -76,7 +75,7 @@ Krolony.Specialized={
 		---@endsection
 
 		---@section bitsToFloatDry
-		---converts integer back to floating point number
+		---converts integer back to floating point number, no infs nans subnormals
 		---@param exponent integer
 		---@param mantissa integer
 		---@param exponentBits integer
@@ -139,97 +138,62 @@ Krolony.Specialized={
 	end,
 	---@endsection
 
-	---@section fitPoly
-	---very resource expensive, the more data you have the worse it is, but it does a decent fit, progressively gets better, parabolas are order 2, data table {{x,y},{x,y}} that you want to fit, speed how many paths it checks per call, provide with memory table, returns table of a polynomial {a0,a1,a2}
+	---@section fitPolyConstructor
+	---very resource expensive, the more data you have the worse it is, but it does a decent fit, progressively gets better, data table {{x,y},{x,y}} that you want to fit, speed how many paths it checks per call, provide with memory table, returns table of a polynomial {a0,a1,a2}
 	---@param amtOfCoefs integer how many coefficient it has to work with
-	---@param data table {{x,y},{x,y},...} data to fit to
-	---@param errorFunction function function(coefficients,data) that outputs the error between data and a function with given coefficients
-	---@param speed integer how many iterations it does per call
-	---@param memorytable table feed it empty unique table which it's gonna use as it's memory
-	---@return table coefficients
-	fitPoly=function(amtOfCoefs,data,errorFunction,speed,memorytable)
-		local coefsCheck,mem,rnd,possibilities,checked,step,errSaved,errCheck,k,coefsSaved={},memorytable,math.random
-		if #mem~=6 or #mem[4]~=amtOfCoefs then
-			for i=1,6 do
-				mem[i]=1
-			end
-			mem[4]={}
-			for i=1,amtOfCoefs do
-				mem[4][i]=0
-			end
+	---@return table object with method
+	fitPolyConstructor=function(amtOfCoefs)
+		local coefs={}
+		for i=1,amtOfCoefs do
+			coefs[i]=1
 		end
-		--step,err1,b,k,m=mem[2],mem[3],mem[4],mem[5],mem[6]
-		step,errSaved,coefsSaved,k,checked=mem[2],errorFunction(mem[4],data),mem[4],mem[5],mem[6]
-		--err1=errorFunction(b,data)
-		possibilities=3^amtOfCoefs
-		for i=1,speed do
-			checked=checked+1
-			if checked>possibilities then step,checked=step*rnd(),1 end
-			k=k+1
-			for j=1,amtOfCoefs do
-				coefsCheck[j]=coefsSaved[j]+step*(k//3^(j-1)%3-1)*rnd()
-			end
-			errCheck=errorFunction(coefsCheck,data)
-			if errCheck<errSaved then
-				errSaved=errCheck
-				k=k-1
-				for i=1,amtOfCoefs do
-					coefsSaved[i]=coefsCheck[i]
+		return {
+			iters=0,
+			step=1,
+			error=1,
+			coefs=coefs,
+			k=1,
+			---@param self table
+			---@param data table {{x,y},{x,y},...} data to fit to
+			---@param errorFunction function function(coefficients,data) that outputs the error between data and a function with given coefficients
+			---@param speed integer how many iterations it does per call
+			---@return table coefficients {1,2,3,...}
+			---@return number stepsize the change of coefficients it last checked
+			---@return number error of the last processed coefficients
+			---@return number iterations total amount of checked combinations
+			run=function(self,data,errorFunction,speed)
+				local coefsCheck,rnd,possibilities,checked,step,errSaved,errCheck,k,coefsSaved={},math.random
+				step,errSaved,coefsSaved,k,checked=self.step,errorFunction(self.coefs,data),self.coefs,self.k,self.checked
+				possibilities=3^amtOfCoefs
+				for i=1,speed do
+					checked=checked+1
+					if checked>possibilities then
+						step,checked=step*rnd(),1
+						step=step>0 and step or 2^20
+					end
+					k=k+1
+					for j=1,amtOfCoefs do
+						coefsCheck[j]=coefsSaved[j]+step*(k//3^(j-1)%3-1)*rnd()
+					end
+					errCheck=errorFunction(coefsCheck,data)
+					if errCheck<errSaved then
+						errSaved=errCheck
+						k=k-1
+						for i=1,amtOfCoefs do
+							coefsSaved[i]=coefsCheck[i]
+						end
+						step=step*1.1
+						self.iters=self.iters+1
+						checked=0
+					end
 				end
-				step=step*1.1
-				mem[1]=mem[1]+1
-				checked=0
+				self.step=step--2
+				self.error=errSaved--3
+				self.k=k--5
+				self.checked=checked--6
+				return coefsSaved,step,errSaved,self.iters
 			end
-		end
-		mem[2]=step>0 and step or 1
-		mem[3]=errSaved
-		mem[5]=k
-		mem[6]=checked
-		return coefsSaved
-	end,
-	---@endsection
-
-	---@section Dial
-
-	---draws a dial, arc in degrees, aspect is height/width (circle/elipse), rotation offset, reverse is bool to change direction, aliasting is a number
-	Dial=function(cenx,ceny,radius,minvalue,maxvalue,value,marks,arc,aspect,rotation,reversed,aliasing,H,S,V)
-		local rot,x,y,d,x1,y1,x2,y2,an,r,g,b,a=rotation,cenx,ceny,arc,1/(maxvalue-minvalue)
-		local findPos=function(x,y,radius,angle)
-			local r1,r2=radius/math.max(1,aspect),radius/math.max(1,1/aspect)
-			return x+math.cos(rot)*r1*math.cos(angle)-math.sin(rot)*r2*math.sin(angle),y+math.sin(rot)*r1*math.cos(angle)+math.cos(rot)*r2*math.sin(angle)
-		end
-
-		y1=-x1*minvalue
-		x1=value*x1+y1
-		d=d*pi/180
-		an=d*(x1-1/2)*(reversed and -1 or 1)
-		rot=(rot+90)*pi/180
-		--r,g,b=HSV(H,S,V,2.2)
-		for j=1,aliasing do
-			r0=radius+2*j/aliasing-1
-			x2,y2=findPos(x,y,r0,-d/2-pi)
-			r,g,b,a=Krolony.Draw.HSV(H,S,V,-255*math.abs(2*j/aliasing-1)+255)
-			--sC(r,g,b,-255*abs(2*j/aliasing-1)+255)
-			screen.setColor(r,g,b,a)
-			for i=-marks,marks do
-				x1,y1=findPos(x,y,r0,d*i/marks/2-pi)
-				screen.drawLine(x1,y1,x2,y2)
-				x2,y2=x1,y1
-			end
-			for i=-marks,marks,2 do
-				x1,y1=findPos(x,y,r0+2,d*i/marks/2-pi)
-				x2,y2=findPos(x,y,r0-3,d*i/marks/2-pi)
-				screen.drawLine(x1,y1,x2,y2)
-			end
-			x1,y1={},{}
-			x1[1],y1[1]=findPos(x,y,r0-5,an+pi)
-			for i=-1,1 do
-				x1[i+3],y1[i+3]=findPos(x,y,r0/(3+math.abs(i)),an+pi*(2+i/2))
-			end
-			for i=1,4 do
-				screen.drawLine(x1[i],y1[i],x1[i%4+1],y1[i%4+1])
-			end
-		end
+		}
 	end,
 	---@endsection
 
@@ -239,8 +203,9 @@ Krolony.Specialized={
 	Ballistics2D=function(x,y,elevation,velocity,drag,lifetime,indirect)
 		local x,y,tx,ty,vx,vy=0,0,x,y
 		local e,v,d,l,g,step,t,bad=elevation,velocity,1-drag,lifetime,30/3600,1,0
+		local pi=math.pi
 
-		vx,vy=v*cos(e)/60,v*sin(e)/60
+		vx,vy=v*math.cos(e)/60,v*math.sin(e)/60
 		repeat
 			x=x+vx*(1-d^step)/(1-d)
 			y=y+vy+d*(d^(step-1)*(-(d*(g-vy)+vy))+d*g*(step-1)+d*g-d*vy-g*(step-1)+vy)/(d-1)^2
@@ -254,7 +219,7 @@ Krolony.Specialized={
 			bad=t>=l or ((vx*vx+vy*vy)^0.5<5/6 and l<1000)
 		until x>tx-vx/2 or bad
 		e=(e==pi/2 or -e==pi/2) and (indirect and pi/3 or 0) or Krolony.Utilities.clamp(-pi/2,pi/2,e+(math.atan(ty/tx)-math.atan(y/x))/(indirect and -200000/tx or 3))
-		return e,bad,t,((tx-x)^2+(ty-y)^2)^0.5
+		return e,y,bad,t,((tx-x)^2+(ty-y)^2)^0.5
 	end,
 	---@endsection
 
@@ -268,6 +233,7 @@ Krolony.Specialized={
 		local v,d,l,g,step=gun[1],1-gun[2],gun[3],30/3600,1
 		local th,t=((tx-ix)^2+(ty-iy)^2)^0.5,0
 		vx,vy,vz=(vx+v*math.sin(a)*math.cos(e))/60,(vy+v*math.cos(a)*math.cos(e))/60,(vz+v*math.sin(e))/60
+		--t=math.log(1+x*(self.d-1)/vel)/math.log(self.d)//1
 		repeat
 			x=x+vx*(1-d^step)/(1-d)
 			y=y+vy*(1-d^step)/(1-d)
@@ -285,7 +251,7 @@ Krolony.Specialized={
 			--if step<1 then fuckme() end
 			bad=t>=l or ((vh*vh+vz*vz)^0.5<5/6 and l<1000)
 		until h>th-vh/2 or bad
-		v,d=math.atan(tx-ix,ty-iy),math.atan(x-ix,y-iy) 
+		v,d=math.atan(tx-ix,ty-iy),math.atan(x-ix,y-iy)
 		a=((a+v-d)%(2*pi)+3*pi)%(2*pi)-pi
 		--e=(e==pi/2 or -e==pi/2) and (indirect and pi/3 or 0) or min(pi/2,max(-pi/2,e+(atan((tz-iz)/th)-atan((z-iz)/h))/(indirect and -200000/th or 3)))
 		--min(pi/2,max(-pi/2,e+(atan((tz-iz)/th)-atan((z-iz)/h))/(indirect and -200000/th or 3)))
@@ -309,247 +275,260 @@ Krolony.Specialized={
 	end,
 	---@endsection
 
-	---@section createRender
-	createRender=function(near_plane,far_plane,cam_fov)
-		local vecNew,shadeA,shadeB,shadeC=Krolony.Math.Vec3.newV3
-		shadeA,shadeB,shadeC=vecNew(),vecNew(),vecNew()
+	---@section createGameEngine
+	createGameEngine=function(near_plane,far_plane,cam_fov)
+		local vecNew,s,c,rotMat,vecA,vecB,vecC=Krolony.Math.Vec3.newV3,math.sin,math.cos
+		rotMat=function(yaw,pitch,roll)
+			local cy,sy,cp,sp,cr,sr=c(yaw),s(yaw),c(pitch),s(pitch),c(roll),s(roll)
+			return {
+				{cr*cy-sr*sp*sy,-sr*cp,cr*sy+sr*sp*cy},
+				{sr*cy+cr*-sp*-sy,cr*cp,sr*sy-cr*sp*cy},
+				{-cp*sy,sp,cp*cy},
+				{0,0,0,1},
+				multVecM=function(mat,vec)
+					return mat[1][1]*vec.x+mat[1][2]*vec.y+mat[1][3]*vec.z+mat[1][4]*vec.w,
+						mat[2][1]*vec.x+mat[2][2]*vec.y+mat[2][3]*vec.z+mat[2][4]*vec.w,
+						mat[3][1]*vec.x+mat[3][2]*vec.y+mat[3][3]*vec.z+mat[3][4]*vec.w,
+						mat[4][1]*vec.x+mat[4][2]*vec.y+mat[4][3]*vec.z+mat[4][4]*vec.w
+				end
+			}
+		end
+		vecA,vecB,vecC=vecNew(),vecNew(),vecNew()
 		return {
-			points={},
-			points_g={},
+			total_ids=0,
+			objects={},
 			triangles={},
+			points={},
+			screenspace={},
 			near_plane=near_plane,
 			far_plane=far_plane,
 			cam_fov=cam_fov,
-			aspect=1,
 
-			shader=function(triangle,vec,points)
-				local mid,v0,v1,v2,N=triangle.mid,points[triangle[1]],points[triangle[2]],points[triangle[3]],triangle.normal
+			---@section instantiate
+			instantiate=function(self,points,triangles,position,yaw,pitch,roll,id)
+				self.total_ids=self.total_ids+1
+				id=id or self.total_ids
+				self.objects[id]={
+					points={},
+					points_g={},
+					triangles={},
+					position=position,
+					yaw=yaw,
+					pitch=pitch,
+					roll=roll
+				}
+				local object,triangle=self.objects[id]
+				for i=1,#points do
+					object.points_g[i]=vecNew()
+					object.points[i]=vecNew(points[i].x,points[i].y,points[i].z)
+				end
+				for i=1,#triangles do
+					object.triangles[i]={mid=vecNew(),normal=vecNew(),table.unpack(triangles[i])}
+					triangle=object.triangles[i]
+					triangle.r=triangles[i].r
+					triangle.g=triangles[i].g
+					triangle.b=triangles[i].b
 
-				mid:subV3(vec,shadeC)
-				v1:subV3(v0,shadeA)
-				v2:subV3(v0,shadeB)
-				return vec.strength*shadeC:dotV3(N)/shadeC:magnitudeV3()^3
+				end
+				self:updateGlobalSpace(id)
 			end,
+			---@endsection
 
-			updateScene=function(self,objects,points_new,triangles,cam_x,cam_y,cam_z,cam_yaw,cam_pitch,cam_roll,backface_culling,lights)
-				test2=Krolony.Profilers.profileTime('matrix: ',true)
-				local c,s,fov,matrix,temporary,triangle_new,triangle,flag,points_g,points,point=math.cos,math.sin,math.tan(self.cam_fov/2*math.atan(self.aspect))
-				local cb,sb,ca,sa,cg,sg=c(-cam_pitch),s(-cam_pitch),c(-cam_yaw),s(-cam_yaw),c(-cam_roll),s(-cam_roll)
-				matrix=Krolony.Math.Matrix.newM(
-					{ca,0,sa,0},--yaw b
-					{0,1,0,0},
-					{-sa,0,ca,0},
-					{0,0,0,1}
-				)
-				temporary=Krolony.Math.Matrix.newM(
-					{1,0,0,0},--pitch y
-					{0,cb,-sb,0},
-					{0,sb,cb,0},
-					{0,0,0,1}
-				)
-				--matrix=matrix:multiplyM(temporary)
-				matrix=temporary:multiplyM(matrix)
-				temporary=Krolony.Math.Matrix.newM(
-					{cg,-sg,0,0},--roll a
-					{sg,cg,0,0},
-					{0,0,1,0},
-					{0,0,0,1}
-				)
-				matrix=temporary:multiplyM(matrix) -- Roll * (Pitch * Yaw) = Roll * Pitch * Yaw
-				--matrix=matrix:multiplyM(temporary)
-				--matrix=matrix:inverseM() --is now rotation matrix
-				
-				temporary=Krolony.Math.Matrix.newM(
-					{1,0,0,-cam_x},
-					{0,1,0,-cam_y},
-					{0,0,1,-cam_z},
-					{0,0,0,1}
-				)
-				matrix=matrix:multiplyM(temporary)
-				temporary=Krolony.Math.Matrix.newM( --perspective matrix
-					{1/fov,0,0,0},
-					{0,self.aspect/fov,0,0},
-					{0,0,self.far_plane/(self.far_plane-self.near_plane),-(self.far_plane*self.near_plane)/(self.far_plane-self.near_plane)},
-					--{0,0,self.far_plane+self.near_plane,-self.far_plane*self.near_plane},
-					{0,0,1,0}
-				)
-				--matrix=matrix:multiplyM(temporary)--combine rotation and perspective
-				matrix=temporary:multiplyM(matrix)
+			
+			---@section change_object_placement
+			change_object_placement=function(self,id,position,yaw,pitch,roll)
+				local object=self.objects[id]
+				if object then
+					object.position=position
+					object.yaw=yaw
+					object.pitch=pitch
+					object.roll=roll
+					self:updateGlobalSpace(id)
+				end
+			end,
+			---@endsection
 
+			--[[
+			physicsSimple=function(self)
+				--check collissions
+				local objects=self.objects
+				for id1,object1 in next,objects do
+					for id2,object2 in next,objects,id1 do
+						object1.pos:subV3(object2.pos,vecA)
+						if vecA:magnitudeV3()<object1.bounding_radius+object2.bounding_radius then
+							
 
-
-				local shader,camPos,normal=self.shader,{x=cam_x,y=cam_y,z=cam_z,w=0,strength=1}
-
-				test2:stop()
-				test2=Krolony.Profilers.profileTime('update: ',true)
-				--[[for i=#triangles+1,#self.triangles do
-					self.triangles[i].flag=false
-				end
-				for i=#self.triangles+1,#triangles do
-					self.triangles[i]={mid=vecNew(),normal=vecNew(),dis=0}
-				end
-				for i=1,#points_new do
-					self.points[i]=self.points[i] or vecNew()
-					self.points_g[i]=self.points_g[i] or vecNew()
-					points=self.points[i]
-					points_g=self.points_g[i]--a reuse, would be point_g but that's extra chars so
-					
-					points_g:setV3(points_new[i].x,points_new[i].y,points_new[i].z,1)
-					points:setV3(matrix:multVecM(points_g))
-					points.x=points.x/points.w
-					points.y=points.y/points.w
-				end]]
-				self.totalFlags=0
-				points=self.points
-				points_g=self.points_g
-				local pIndex,tIndex,temporary2,temporary=0,0,0,0
-				for i,object in pairs(objects) do
-					temporary2=temporary2+#object.points
-					temporary=temporary+#object.triangles
-				end
-				for i=#self.points,temporary2 do
-					self.points_g[i]=vecNew()
-					self.points[i]=vecNew()
-				end
-				for i=#self.triangles,temporary do
-					self.triangles[i]={mid=vecNew(),normal=vecNew(),dis=0}
-				end
-				for i,object in pairs(objects) do
-					ca,cb,cg,sa,sb,sg=object.yaw,object.pitch,object.roll,object.x,object.y,object.z
-					temporary=Krolony.Math.Matrix.newM(
-						{1,0,0,sa},
-						{0,1,0,sb},
-						{0,0,1,sg},
-						{0,0,0,1}
-					)
-					cb,sb,ca,sa,cg,sg=c(cb),s(cb),c(ca),s(ca),c(cg),s(cg)
-					temporary2=Krolony.Math.Matrix.newM(
-						{ca,0,sa,0},
-						{0,1,0,0},
-						{-sa,0,ca,0},
-						{0,0,0,1}
-					)
-					temporary=temporary2:multiplyM(temporary)
-					temporary2=Krolony.Math.Matrix.newM(
-						{1,0,0,0},
-						{0,cb,-sb,0},
-						{0,sb,cb,0},
-						{0,0,0,1}
-					)
-					temporary=temporary:multiplyM(temporary2)
-					temporary2=Krolony.Math.Matrix.newM(
-						{cg,-sg,0,0},
-						{sg,cg,0,0},
-						{0,0,1,0},
-						{0,0,0,1}
-					)
-					temporary=temporary2:multiplyM(temporary)
-					--temporary2=matrix:multiplyM(temporary)
-
-					for j,newTriangle in ipairs(object.triangles) do
-						tIndex=tIndex+1
-						triangle=self.triangles[tIndex]
-						triangle[1],triangle[2],triangle[3]=newTriangle[1]+pIndex,newTriangle[2]+pIndex,newTriangle[3]+pIndex
-						triangle.r,triangle.b,triangle.g=newTriangle.r,newTriangle.b,newTriangle.g
-					end
-					for j,newPoint in ipairs(object.points) do
-						pIndex=pIndex+1
-						--points_g[pIndex]:setV3(newPoint.x,newPoint.y,newPoint.z,1)
-						point=points_g[pIndex]--global
-						vertice=points[pIndex]--screen
-						point:setV3(temporary:multVecM(newPoint))
-						vertice:setV3(matrix:multVecM(point))
-						--point.x,point.y,point.z,point.w=temporary:multVecM(newPoint)
-						--vertice.x,vertice.y,vertice.z,vertice.w=matrix:multVecM(point)
-						vertice.x=vertice.x/vertice.w
-						vertice.y=vertice.y/vertice.w
-					end
-				end
-				for i=tIndex+1,#self.triangles do
-					self.triangles[i].flag=false
-				end
-				test2:stop()
-
-				normal=function(triangle)
-					local v0,v1,v2,N=points_g[triangle[1]],points_g[triangle[2]],points_g[triangle[3]],triangle.normal
-					local x1,y1,z1,x2,y2,z2=v1.x-v0.x,v1.y-v0.y,v1.z-v0.z,v2.x-v0.x,v2.y-v0.y,v2.z-v0.z --in relation to 1st vertex
-					x1,y1,z1=y1*z2-z1*y2,z1*x2-x1*z2,x1*y2-y1*x2 --cross product
-					x2=1/(x1*x1+y1*y1+z1*z1)^0.5 --normalization
-					N:setV3(x1*x2,y1*x2,z1*x2,0) --skips many calls
-				end
-				test2=Krolony.Profilers.profileTime('triangles: ',true)
-				for i=1,tIndex do--#triangles do
-					triangle_new=triangles[i]
-					triangle=self.triangles[i]
-					flag=0
-					local x,y,z,vertice=0,0,0
-					for j=1,3 do
-						vertice=triangle[j]--triangle_new[j]
-						--triangle[j]=vertice
-						point=points_g[vertice]
-						x=x+point.x
-						y=y+point.y
-						z=z+point.z
-						--/\ /\ /\ midpoint in global space
-						--\/ \/ \/ screenspace within -1 to 1
-						point=points[vertice]
-						flag=flag+(((point.x^2>1) or (point.y^2>1)) and 1 or 0) + (-point.w>self.near_plane and -point.w<self.far_plane and 0 or 9)
-					end
-					flag=flag<3
-					if flag then
-						triangle.mid:setV3(x/3,y/3,z/3,0)
-						normal(triangle)
-						flag=shader(triangle,camPos,points_g)*backface_culling>=0
-						if flag then
-							triangle.mid:subV3(camPos,shadeA)
-							triangle.dis=shadeA:magnitudeV3()
-							--triangle.r=triangle_new.r
-							--triangle.g=triangle_new.g
-							--triangle.b=triangle_new.b
 						end
 					end
-					triangle.flag=flag
-					self.totalFlags=self.totalFlags+(flag and 1 or 0)
 				end
-				test2:stop()
 
-				test2=Krolony.Profilers.profileTime('sort: ',true)
-				table.sort(self.triangles,function(a,b) return a.flag and not (b.flag and not (a.dis>b.dis)) end)
-				test2:stop()
+				--add forces -> acceleration -> speed -> position
+
+				--0 forces so that they can be added outside
+			end,]]
+
+			---@section updateGlobalSpace
+			updateGlobalSpace=function(self,id)
+				local object,points_g,triangle,matrix=self.objects[id]
+				points_g=object.points_g
+				local cx,cy,cz,x,y,z,sx,sy,sz={object.position.x,object.position.y,object.position.z}
+				matrix=rotMat(object.yaw,object.pitch,object.roll)
+				for i=1,3 do
+					matrix[i][4]=cx[i]
+				end
+				for j=1,#object.points do
+					points_g[j]:setV3(matrix:multVecM(object.points[j]))
+				end
+				for j=1,#object.triangles do
+					triangle=object.triangles[j]
+					x,y,z=points_g[triangle[1]],points_g[triangle[2]],points_g[triangle[3]]
+					cx,cy,cz,sx,sy,sz=y.x-x.x,y.y-x.y,y.z-x.z,z.x-x.x,z.y-x.y,z.z-x.z --in relation to 1st vertex
+					--cy,cp,cr=cp*sr-cr*sp,cr*sy-cy*sr,cy*sp-cp*sy --cross product
+					--sy=1/(cy*cy+cp*cp+cr*cr)^0.5 --normalization
+					--triangle.normal:setV3(cy*sy,cp*sy,cr*sy) --skips many calls
+					vecA:setV3(cy*sz-cz*sy,cz*sx-cx*sz,cx*sy-cy*sx)
+					--vecA:unitV3(triangle.normal)
+					sy=vecA:magnitudeV3()
+					triangle.normal:setV3(vecA.x/sy,vecA.y/sy,vecA.z/sy)
+
+					x:addV3(y,vecA)
+					vecA:addV3(z,vecB)
+					triangle.mid:setV3(vecB.x/3,vecB.y/3,vecB.z/3)
+					--triangle.mid.strength=1
+				end
 			end,
+			---@endsection
 
-			drawTriangles=function(self,x,y,w,h,lights,backface_culling)
-				self.aspect=h/w
+			---@section drawScene
+			drawScene=function(self,x,y,w,h,cam_pos,cam_yaw,cam_pitch,cam_roll,lights,backface_culling,hash_agresiveness)
 				w=w/2
 				h=h/2
 				x=x+w
 				y=y+h
-				local lasthash,default_light,points_g,points,triangles,color,draw,triangle,p1,p2,p3,hash,r,g,b,hash_agresiveness=-1,#lights==0 and 1 or 0,self.points_g,self.points,self.triangles,screen.setColor,screen.drawTriangleF
-				local RGB,min,max,shader,shade,shadeCR,shadeCG,shadeCB,light=Krolony.Screens.correctRGBA,math.min,math.max,self.shader
-				hash_agresiveness=0.1--0.005--min 0.001
-				for i=1,self.totalFlags do
+				local min,max,color,draw,aspect,pixels=math.min,math.max,screen.setColor,screen.drawTriangleF,h/w,self.screenspace
+				local fov,triangles,objects,counter,lasthash,default_light,near,far,points,hash,shade,triangle,matrix,object,flag,vec,shader,r,g,b,shadeCR,shadeCG,shadeCB=math.tan(self.cam_fov/2*math.atan(aspect)),self.triangles,self.objects,0,-1,#lights==0 and 1 or 0,self.near_plane,self.far_plane,self.points
+				matrix=rotMat(-cam_yaw,-cam_pitch,-cam_roll)
+				for i=1,3 do--translation
+					matrix[i][4]=-matrix[i][1]*cam_pos.x-matrix[i][2]*cam_pos.y-matrix[i][3]*cam_pos.z
+				end
+				hash={aspect/fov,1/fov,-(far+near)/(far-near)}
+				for i=1,4 do--perspective
+					matrix[4][i]=-matrix[3][i]
+					for j=1,3 do
+						matrix[j][i]=matrix[j][i]*hash[j]
+					end
+				end
+				matrix[3][4]=matrix[3][4]-2*(far*near)/(far-near)
+
+				shader=function(normal,vec,tria_pos)
+					--local normal=triangle.normal
+					vecC:setV3(tria_pos.x-vec.x,tria_pos.y-vec.y,tria_pos.z-vec.z)
+					--local mid,normal=triangle.mid,triangle.normal
+					--vecC:setV3(mid.x-vec.x,mid.y-vec.y,mid.z-vec.z)
+					--return vec.strength*vecC:dotV3(triangle.normal)/vecC:magnitudeV3()^3
+					return vec.strength/vecC:magnitudeV3()^3*(vecC.x*normal.x+vecC.y*normal.y+vecC.z*normal.z)--+vecC.w*normal.w)
+				end
+
+				--[[
+				perspective=Krolony.Math.Matrix.newM(
+					{aspect/fov,0,0,0},
+					{0,1/fov,0,0},
+					{0,0,-(far+near)/(far-near),-(far*near)/(far-near)},
+					--{0,0,far+near,-far*near},
+					{0,0,-1,0}
+				)
+				matrix=Krolony.Math.Matrix.multiplyM(matrix,perspective)]]
+				cam_pos.strength=cam_pos.strength or 1
+				--cam_pos.normal=vecNew(-c(cam_pitch)*s(cam_yaw),s(cam_pitch),-c(cam_pitch)*c(cam_yaw))
+				--cam_pos.mid=cam_pos
+				hash=0
+				for key,object in next,objects do
+					for index,point in next,object.points_g do
+						points[index+hash]=points[index+hash] or vecNew()
+						points[index+hash]:setV3(point.x,point.y,point.z)
+					end
+					r=object.points_g
+					for index,obtriangle in next,object.triangles do
+						if shader(obtriangle.normal,cam_pos,obtriangle.mid)*backface_culling>0 then-- and shader(cam_pos,obtriangle.mid)*backface_culling>0 then
+							flag=0
+							b=0
+							for i=1,3 do
+								shade=obtriangle[i]
+								g=shade+hash
+								vec=points[g]
+								if vec.w then
+									vec:setV3(matrix:multVecM(r[shade]))
+									vec.x=vec.x/vec.w
+									vec.y=vec.y/vec.w
+									vec.z=vec.z/vec.w
+									vec.w=nil
+								end
+								b=b+vec.z
+								flag=flag+((vec.x^2>1 or vec.y^2>1) and 1 or 0) + (vec.z^2>1 and 9 or 0)
+							end
+							if flag<3 then
+								counter=counter+1
+								triangles[counter]=triangles[counter] or {}
+								triangle=triangles[counter]
+								triangle.dis=b
+								triangle.key=key
+								triangle.index=index
+								triangle.offset=hash
+							end
+						end
+					end
+					hash=hash+#object.points_g
+				end
+				for i=counter+1,#triangles do
+					triangles[i]=nil
+				end
+				table.sort(triangles,function(a,b) return a.dis>b.dis end)
+				for px=x-w,x+w do
+					pixels[px]=pixels[px] or {}
+					for py=y-h,y+h do
+						pixels[px][py]=2
+					end
+				end
+				for i=counter,1,-1 do
 					triangle=triangles[i]
-					r,g,b=triangle.r,triangle.g,triangle.b
+					object=objects[triangle.key]
+					flag=triangle.offset
+					triangle=object.triangles[triangle.index]
+					r,g,b=points[flag+triangle[1]],points[flag+triangle[2]],points[flag+triangle[3]]
+					flag=false
+					for px=0,0 do
+						
+						
+					end
+				end
+				for i=1,counter do
+					triangle=triangles[i]
+					object=objects[triangle.key]
+					flag=triangle.offset
+					triangle=object.triangles[triangle.index]
+					near=triangle.normal
+					far=triangle.mid
 					shadeCR,shadeCG,shadeCB=default_light,default_light,default_light
-					for j=1,#lights do
-						light=lights[j]
-						shade=max(0,backface_culling*shader(triangle,light,points_g))
+					for i,light in next,lights do
+						shade=max(0,backface_culling*shader(near,light,far))
 						shadeCR=shadeCR+shade*light.r
 						shadeCG=shadeCG+shade*light.g
 						shadeCB=shadeCB+shade*light.b
-					end
-					r,g,b=RGB(min(300,r*shadeCR),min(300,g*shadeCG),min(300,b*shadeCB),0)
-					hash=((r/255)^0.5//hash_agresiveness)+(((g/255)^0.5//hash_agresiveness)<<20)+(((b/255)^0.5//hash_agresiveness)<<40)
+					end--0.004ms per light per 5000 triangles
+					r,g,b=min(255,triangle.r*shadeCR),min(255,triangle.g*shadeCG),min(255,triangle.b*shadeCB)
+					hash=r/255//hash_agresiveness+((g/255//hash_agresiveness)<<20)+((b/255//hash_agresiveness)<<40)
 					if hash~=lasthash then
-						color(r,g,b)
+						color(255*(r/255)^2.4,255*(g/255)^2.4,255*(b/255)^2.4)
 						lasthash=hash
-					end
-
-					p1,p2,p3=points[triangle[1]],points[triangle[2]],points[triangle[3]]
-					draw(p1.x*h+x,p1.y*w+y,p2.x*h+x,p2.y*w+y,p3.x*h+x,p3.y*w+y)
+					end--0.001ms per triangle + color head
+					
+					r,g,b=points[flag+triangle[1]],points[flag+triangle[2]],points[flag+triangle[3]]
+					draw(r.x*w+x,r.y*h+y,g.x*w+x,g.y*h+y,b.x*w+x,b.y*h+y)--the brunt
 				end
 			end,
+			---@endsection
 
+			--[[
 			drawPixels=function(self,x,y,w,h,lights,backface_culling)
 				self.aspect=h/w
 				self.screenSpace=self.screenSpace or {}
@@ -558,12 +537,12 @@ Krolony.Specialized={
 				h=h/2
 				x=x+w
 				y=y+h
-				local lasthash,points_g,points,triangles,color,draw,lerp,screenSpace,triangle,x1,x2,x3,y1,y2,y3,p1,p2,p3,z1,z2,z3,hash,r,g,b,d,halfd,halfy=-1,self.points_g,self.points,self.triangles,screen.setColor,screen.drawLine,Krolony.Utilities.lerp,self.screenSpace
+				local lasthash,points_g,points,triangles,color,draw,lerp,screenSpace,triangle,cy,sy,x3,cp,sp,y3,p1,p2,p3,cr,sr,z3,hash,r,g,b,d,halfd,halfy=-1,self.points_g,self.points,self.triangles,screen.setColor,screen.drawLine,Krolony.Utilities.lerp,self.screenSpace
 				local RGB,min,max,shader,shade,shadeCR,shadeCG,shadeCB,light,inTriangle,orient=Krolony.Screens.correctRGBA,math.min,math.max,self.shader
 				for i=x-w,x+w do
 					screenSpace[i]=screenSpace[i] or {}
 					for j=y-h,y+h do
-						screenSpace[i][j]=99999999999
+						screenSpace[i][j]=self.far_plane
 					end
 				end
 				
@@ -572,29 +551,29 @@ Krolony.Specialized={
 					return v>0 and 1 or -1
 				end
 				inTriangle=function(x,y,triangle,points)
-					local A,B,C=points[triangle[1]],points[triangle[2]],points[triangle[3]]
-					shadeA:setV3(x,y)
-					local v=orient(A,B,shadeA)+orient(B,C,shadeA)+orient(C,A,shadeA)
+					local A,B,C=points[triangle[1]]--,points[triangle[2]],points[triangle[3]]
+					--[[vecA:setV3(x,y)
+					local v=orient(A,B,vecA)+orient(B,C,vecA)+orient(C,A,vecA)
 					return v^2==9
 				end
 				for i=1,self.totalFlags do
 					triangle=triangles[i]
 
-					p1,p2,p3=points[triangle[1]],points[triangle[2]],points[triangle[3]]
-					x1=p1.x*h+x
-					y1=p1.y*w+y
-					x2=p2.x*h+x
-					y2=p2.y*w+y
+					p1,p2,p3=points[triangle[1]]--,points[triangle[2]],points[triangle[3]]
+					--[[cy=p1.x*h+x
+					cp=p1.y*w+y
+					sy=p2.x*h+x
+					sp=p2.y*w+y
 					x3=p3.x*h+x
 					y3=p3.y*w+y
-					z1,z2,z3=p1.w,p2.w,p3.w
+					cr,sr,z3=p1.w,p2.w,p3.w
 
-					local minx,maxx,miny,maxy=max(min(x1,x2,x3),x-w),min(x+w,max(x1,x2,x3)),max(y-h,min(y1,y2,y3)),min(y+h,max(y1,y2,y3))
+					local minx,maxx,miny,maxy=max(min(cy,sy,x3),x-w),min(x+w,max(cy,sy,x3)),max(y-h,min(cp,sp,y3)),min(y+h,max(cp,sp,y3))
 					for sx=minx//1,maxx do
 						for sy=miny//1,maxy do
 							if inTriangle((sx-x)/w,(sy-y)/h,triangle,points) then
-								halfd=lerp(sx,x1,z1,x2,z2)
-								halfy=lerp(sx,x1,y1,x2,y2)
+								halfd=lerp(sx,cy,cr,sy,sr)
+								halfy=lerp(sx,cy,cp,sy,sp)
 								d=lerp(sy,halfy,halfd,y3,z3)
 								if screenSpace[sx][sy]>-d then
 									screenSpace[sx][sy]=-d
@@ -620,7 +599,7 @@ Krolony.Specialized={
 						end
 					end
 				end
-			end
+			end]]
 		}
 	end
 	---@endsection

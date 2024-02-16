@@ -158,15 +158,6 @@ Krolony.Math.Matrix=
 	end,
 	---@endsection
 
-	---@section vectorToMatrix
-	---changes Krolony.Vector into Krolony.Math.Matrix vector form
-	---@param vec table vector
-	---@return table object with methods
-	vectorToMatrix=function(vec)
-		return Krolony.Math.Matrix.newM({vec.x},{vec.y},vec.z and {vec.z},vec.w and {vec.w})
-	end,
-	---@endsection
-
 	---@section matrixToVector3
 	---changes Krolony.Matrix into Krolony.Math.Vec3
 	---@param A table matrix

@@ -53,7 +53,7 @@ Krolony.Profilers={
 			---@param self table
 			---@param FPS_capped number
 			---@param averaging_ticks number over how many ticks it averages (higher better) and how long you wait for an update
-			---@return unknown updates once in averaging_ticks returning a number, returns nil otherwise, important!
+			---@return unknown updates once in averaging_ticks returns a number, returns false otherwise, important!
 			run_onTick=function(self,FPS_capped,averaging_ticks)
 				self.onTick_fires=self.onTick_fires+1
 				local tps,check=0,0 --used for when there were no onDraw calls due to not looking at monitor

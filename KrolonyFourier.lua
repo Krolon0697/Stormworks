@@ -54,17 +54,14 @@ Krolony.Fourier={
 		---@param f number frequency of the wavelet
 		---@param N number integer, amount of datapoints, don't leave it too low
 		---@param width number defaults to 1, how wide it is, width of 1 is good for up to a second, 2 lasts 2 seconds etc, also affects time/frequency resolution
-		---@param tps number how many ticks there are per second, in stormworks it's 60 and so can be left blank, defaults to 60
 		---@return table complex wavelet inside is a true morlet wavelet, so it's a complex table
-		createWavelet=function(f,N,width,tps)
-			local tau,kernel,normal,width,tps,x,r,im,plane=2*math.pi,{f=f,N=N},1/12/(width or 1),0.5/(width or 1)^2,tps or 60
+		createWavelet=function(f,N,width)
+			local tau,kernel,normal,width,x,plane=2*math.pi,{f=f,N=N},1/12/(width or 1),0.5/(width or 1)^2
 			for i=0,N-1 do
-				x=((i-(N-1)/2)*tau)/tps
+				x=((i-(N-1)/2)*tau)/60
 				--I'm really happy I did it like that because now I can just have fun with X and not touch e again
 				plane=normal*math.exp(-width*x^2)
-				r=math.cos(x*f)*plane
-				im=math.sin(x*f)*plane
-				kernel[i]={real=r,imag=im}
+				kernel[i]={real=math.cos(x*f)*plane,imag=math.sin(x*f)*plane}
 			end
 			return kernel
 		end,

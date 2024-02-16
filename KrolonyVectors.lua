@@ -65,35 +65,48 @@ Krolony.Math.Vec2=--2D
 	---@section addV2
 	---@param A table
 	---@param B table vector
+	---@param out table
 	---@return table object with methods
-	addV2=function(A,B)
-		return Krolony.Math.Vec2.newV2(A.x+B.x,A.y+B.y)
+	addV2=function(A,B,out)
+		out=out or Krolony.Math.Vec2.newV2()
+		out:setV2(A.x+B.x,A.y+B.y)
+		return out
 	end,
 	---@endsection
 
 	---@section subV2
 	---@param A table
 	---@param B table
+	---@param out table
 	---@return table object with methods
-	subV2=function(A,B)
-		return Krolony.Math.Vec2.newV2(A.x-B.x,A.y-B.y)
+	subV2=function(A,B,out)
+		out=out or Krolony.Math.Vec2.newV2()
+		out:setV2(A.x-B.x,A.y-B.y)
+		return out
 	end,
 	---@endsection
 
 	---@section scaleV2
 	---@param A table
 	---@param B number to scale by
+	---@param out table
 	---@return table object with methods
-	scaleV2=function(A,B)
-		return Krolony.Math.Vec2.newV2(A.x*B,A.y*B)
+	scaleV2=function(A,B,out)
+		out=out or Krolony.Math.Vec2.newV2()
+		out:setV2(A.x*B,A.y*B)
+		return out
 	end,
 	---@endsection
 
 	---@section unitV2
 	---@param A table
+	---@param out table
 	---@return table object with methods
-	unitV2=function(A)
-		return A:scaleV2(1/A:MagnitudeV2())
+	unitV2=function(A,out)
+		out=out or Krolony.Math.Vec2.newV2()
+		local mag=A:MagnitudeV2()
+		out:setV2(A.x/mag,A.y/mag)
+		return out
 	end,
 	---@endsection
 
@@ -102,11 +115,14 @@ Krolony.Math.Vec2=--2D
 	---@param A table
 	---@param B table vector
 	---@param angle number radians
+	---@param out table
 	---@param setFlag boolean specify whether it's set to be at specific angle (true) or rotated by angle (false)
 	---@return table object with methods
-	rotV2=function(A,B,angle,setFlag)
+	rotV2=function(A,B,angle,out,setFlag)
+		out=out or Krolony.Math.Vec2.newV2()
 		local l,a=((A.x-B.x)^2+(A.y-B.y)^2)^0.5,setFlag and angle or angle+math.atan(A.y-B.y,A.x-B.x)
-		return Krolony.Math.Vec2.newV2(B.x+l*math.cos(a),B.y+l*math.sin(a))
+		out:setV2(B.x+l*math.cos(a),B.y+l*math.sin(a))
+		return out
 	end,
 	---@endsection
 
@@ -114,24 +130,38 @@ Krolony.Math.Vec2=--2D
 	---ngl I don't even fucking know what this is but it scalarly projects A onto B whatever that means
 	---@param A table vector
 	---@param B table vector
+	---@param out table
 	---@return number
-	scalarProjectV2=function(A,B)return A:dotV2(B:unitV2()) end,
+	scalarProjectV2=function(A,B,out)
+		out=out or Krolony.Math.Vec2.newV2()
+		out=B:unitV2(out)
+		return A:dotV2(out)
+	end,
 	---@endsection
 
 	---@section projectV2
 	---project A onto B
 	---@param A table vector
 	---@param B table vector
+	---@param out table
 	---@return table object with methods
-	projectV2=function(A,B)return B:scaleV2(A:dotV2(B)/B:dotV2(B))end,
+	projectV2=function(A,B,out)
+		out=out or Krolony.Math.Vec2.newV2()
+		return B:scaleV2(A:dotV2(B)/B:dotV2(B),out)
+	end,
 	---@endsection
 
 	---@section rejectV2
 	---reject A from B
 	---@param A table vector
 	---@param B table vector
+	---@param out table
 	---@return table object with methods
-	rejectV2=function(A,B)return A:suV2b(A:ProjectV2(B)) end
+	rejectV2=function(A,B,out)
+		out=out or Krolony.Math.Vec2.newV2()
+		A:ProjectV2(B,out)
+		return A:suV2b(out,out)
+	end
 	---@endsection
 }
 ---@endsection VECTOR2CLASS
@@ -143,11 +173,11 @@ Krolony.Math.Vec3=--3D
 	---@param x number initial position, defaults to 0
 	---@param y number initial position, defaults to 0
 	---@param z number initial position, defaults to 0
-	---@param w number initial position, defaults to nil, useful for weird 4D shit in 3D
+	---@param w number initial position, defaults to 0, useful for weird 4D shit in 3D
 	---@return table object with methods
 	newV3=function(x,y,z,w)
-		local t={x=x or 0,y=y or 0,z=z or 0,w=w or 0,vectorToMatrix=Krolony.Math.Matrix.vectorToMatrix}
-		for i,v in pairs(Krolony.Math.Vec3) do
+		local t={x=x or 0,y=y or 0,z=z or 0,w=w or 1}
+		for i,v in next,Krolony.Math.Vec3 do
 			t[i]=v
 		end
 		return t
@@ -157,15 +187,27 @@ Krolony.Math.Vec3=--3D
 	---@section setV3
 	---sets xyz to different place
 	---@param A table
-	---@param x number default to 0
-	---@param y number defaults to o
-	---@param z number defaults to 0
+	---@param x number default to nil
+	---@param y number defaults to nil
+	---@param z number defaults to nil
 	---@param w any defaults to nil
 	setV3=function(A,x,y,z,w)
 		A.x=x
 		A.y=y
 		A.z=z
-		A.w=w
+		A.w=w or 1
+	end,
+
+	---@endsection
+	---@section setToV3
+	---sets xyz to different place
+	---@param A table vector to set
+	---@param B table vector from which to set
+	setToV3=function(A,B)
+		A.x=B.x
+		A.y=B.y
+		A.z=B.z
+		A.w=B.w or 1
 	end,
 	---@endsection
 
@@ -183,7 +225,7 @@ Krolony.Math.Vec3=--3D
 	---@param A table
 	---@return number magnitude
 	magnitudeV3=function(A)
-		return (A.x*A.x+A.y*A.y+A.z*A.z+A.w*A.w)^0.5
+		return (A.x*A.x+A.y*A.y+A.z*A.z)^0.5
 	end,
 	---@endsection
 
@@ -247,8 +289,17 @@ Krolony.Math.Vec3=--3D
 	---@return table object with methods
 	crossV3=function(A,B,out)
 		out=out or Krolony.Math.Vec3.newV3()
-		out:setV3(A.y*B.z-A.z*B.y,A.z*B.x-A.x*B.z,A.x*B.y-A.y*B.x,0)
+		out:setV3(A.y*B.z-A.z*B.y,A.z*B.x-A.x*B.z,A.x*B.y-A.y*B.x)
 		return out
+	end,
+	---@endsection
+	
+	---@section vectorToMatrix
+	---changes Krolony.Vector into Krolony.Math.Matrix vector form
+	---@param vec table vector
+	---@return table object with methods
+	vectorToMatrix=function(vec)
+		return Krolony.Math.Matrix.newM({vec.x},{vec.y},{vec.z},vec.w and {vec.w})
 	end,
 	---@endsection
 

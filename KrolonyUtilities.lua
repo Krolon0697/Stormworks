@@ -1,4 +1,4 @@
----@section Utilities 1 UTILITYCLASS
+---@section Utilities 1 UTILITIESCLASS
 Krolony.Utilities={
 
 	---@section clamp
@@ -137,6 +137,16 @@ Krolony.Utilities={
 				return error*self.p+self.integral
 			end
 		}
+	end,
+	---@endsection
+
+	---@section deepCopy
+	deepCopy=function(t)
+		local new={}
+		for key,value in next,t do
+			new[key]=math.type(value)=='table' and Krolony.Utilities.deepCopy(value) or value
+		end
+		return new
 	end,
 	---@endsection
 }
