@@ -368,7 +368,7 @@ require('KineticaL_Harmonica')		--not updated for a long time, pending changes
 require('KineticaL_Matrixa')		--mid updating
 --require('KineticaL_Minifica')		--heavy WIP
 require('KineticaL_Performatica')	--pending changes
-require('KineticaL_Synaptica')		--heavy WIP
+--require('KineticaL_Synaptica')	--heavy WIP
 require('KineticaL_Vectora')		--recently updated, still unsure of the changes
 --require('KineticaL_Virtua') 		--heavy WIP
 
