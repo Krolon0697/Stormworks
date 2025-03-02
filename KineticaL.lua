@@ -26,6 +26,7 @@
 local KL_ipairs,KL_pairs,KL_insert,KL_remove,KL_type=ipairs,pairs,table.insert,table.remove,type
 --comment pending
 KineticaL={
+	version='0.0.0',
 	---@section KL_clamp
 	---more efficient than compact due to not using math.min and math.max
 	---@param minimum number
