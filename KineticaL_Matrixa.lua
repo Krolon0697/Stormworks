@@ -4,7 +4,7 @@ local KineticaL,KL_ipairs,KL_pairs,KL_insert,KL_remove,KL_type=KineticaL,ipairs,
 ---@endsection
 
 ---@section KL_Matrixa 1 KL_MATRIXACLASS
-KL_Matrixa={
+KineticaL.KL_Matrixa={
 	---@section KL_newVM
 	---@param ... number matrix contents in row-major order
 	---@return table object with methods
